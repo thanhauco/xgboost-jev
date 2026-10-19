@@ -274,7 +274,7 @@ def graph_ring(c: Canvas, t: float):
             (
                 17.8,
                 21.0,
-                "Honest read: a modest, noisy gain - and no help against a ring the model never saw",
+                "Honest read: helps known patterns; limited help against a brand-new ring",
             ),
         ],
     )
@@ -286,6 +286,8 @@ def _graph_takeaway(c: Canvas, t: float):
         c.rect(120, 150, 720, 300, fill=PANEL, r=16, k=kt)
         full = _row(f"{ADV}.static", "advanced hybrid (+Jev)", "pr_auc", 0.0)
         nog = _row(f"{ADV}.group_ablation", "minus entity graph / payee", "pr_auc", 0.0)
+        sd_full = _row(f"{ADV}.static", "advanced hybrid (+Jev)", "pr_auc_sd", 0.0)
+        sd_nog = _row(f"{ADV}.group_ablation", "minus entity graph / payee", "pr_auc_sd", 0.0)
         mule = _row(f"{ADV}.static", "advanced hybrid (+Jev)", "per_scenario", {}).get("mule_ring")
         mule_wk = _row(f"{ADV}.continual", "weekly, bootstrap gate", "per_scenario", {}).get(
             "mule_ring"
@@ -303,7 +305,7 @@ def _graph_takeaway(c: Canvas, t: float):
         c.text(
             W / 2,
             330,
-            "Seed-to-seed spread is about +/-0.2 PR-AUC, so this gap is within noise.",
+            f"Spread across seeds: +/-{sd_full:.2f} (all features) vs +/-{sd_nog:.2f} (no graph). Indicative, not conclusive.",
             14,
             WARN,
             "bold",
@@ -313,7 +315,7 @@ def _graph_takeaway(c: Canvas, t: float):
         c.text(
             W / 2,
             352,
-            "Reputation also cannot help a model that never saw a ring before:",
+            "Reputation helps little against a ring the model has never seen:",
             14,
             WARN,
             "bold",
@@ -338,7 +340,7 @@ def _graph_takeaway(c: Canvas, t: float):
             (
                 17.8,
                 21.0,
-                "Honest read: a modest, noisy gain - and no help against a ring the model never saw",
+                "Honest read: helps known patterns; limited help against a brand-new ring",
             )
         ],
     )
@@ -662,7 +664,7 @@ def lifecycle(c: Canvas, t: float):
             (
                 12.4,
                 15.6,
-                "Benchmark: the naive gate hurt; cold retraining scored highest; all within noise",
+                "Benchmark: weekly retraining scores about the same as training once; gates are within noise",
             ),
             (
                 15.6,
@@ -775,7 +777,7 @@ def _lifecycle_late(c: Canvas, t: float):
             (
                 12.4,
                 15.5,
-                "Benchmark: the naive gate hurt; cold retraining scored highest; all within noise",
+                "Benchmark: weekly retraining scores about the same as training once; gates are within noise",
             ),
             (
                 15.6,
