@@ -259,6 +259,26 @@ def _primary_extras(w: _World, adv, perf: dict, jev_latency_ms: float) -> dict:
         "segments_tuned": {kk: _r(v.decline_at) for kk, v in sorted(pol.segments.items())},
         "default_threshold": _r(pol.default.decline_at),
     }
+    # the deployed decision path: calibrated score -> segment policy -> any non-approve action
+    flagged = np.array(
+        [
+            pol.for_segment(sg).decide(float(p)).value != "approve"
+            for sg, p in zip(seg, cal, strict=True)
+        ]
+    )
+    caught = int((flagged & (yv == 1)).sum())
+    calibration.update(
+        {
+            "policy_flag_rate": _r(float(flagged.mean()), 4),
+            "policy_recall": _r(caught / max(int(yv.sum()), 1), 3),
+            "policy_precision": _r(caught / max(int(flagged.sum()), 1), 3),
+            "raw_topk_recall": _r(float(yv[np.argsort(-raw)[:k]].sum() / max(int(yv.sum()), 1)), 3),
+            "raw_topk_precision": _r(float(yv[np.argsort(-raw)[:k]].mean()), 3),
+            "calibrated_distinct_values": int(len(np.unique(cal))),
+            "calibrated_zero_share": _r(float((cal == 0).mean()), 3),
+            "raw_distinct_values": int(len(np.unique(raw))),
+        }
+    )
 
     # online scorer: latency, escalation, budgets
     def online(budget_ms, n=3000):
@@ -489,6 +509,12 @@ def render_advanced(a: dict) -> list[str]:
         f"{c['brier_constant_rate']} |",
         f"| Expected cost: one global threshold / per-segment thresholds | "
         f"${c['cost_global_threshold']:,.0f} / ${c['cost_segment_thresholds']:,.0f} |",
+        f"| Deployed policy (calibrated score, segment thresholds): flag rate / recall / precision | "
+        f"{c['policy_flag_rate']} / {c['policy_recall']} / {c['policy_precision']} |",
+        f"| Ranking by raw score at the alert budget: recall / precision | "
+        f"{c['raw_topk_recall']} / {c['raw_topk_precision']} |",
+        f"| Distinct score values: raw / calibrated (share of calibrated scores exactly 0) | "
+        f"{c['raw_distinct_values']} / {c['calibrated_distinct_values']} ({c['calibrated_zero_share']}) |",
         f"| Segments with enough labels to tune (default threshold {c['default_threshold']}) | "
         f"{', '.join(f'{k}: {v}' for k, v in c['segments_tuned'].items()) or 'none'} |",
         f"| Mule recall, static model: first / second half of the ring's life | "
