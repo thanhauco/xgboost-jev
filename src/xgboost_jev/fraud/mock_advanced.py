@@ -221,6 +221,8 @@ def generate_advanced_stream(
             t += rng.expovariate(u.rate / DAY)
             hour = rng.choices(range(24), weights=_HOUR_WEIGHTS)[0]
             ts = t - (t % DAY) + 3600 * hour + rng.uniform(0, 3600)
+            if ts >= start_ts + horizon:  # never emit past the requested number of days
+                break
             while next_login < ts:
                 ev(next_login, u.uid, "login", rng.choice(u.devices), u.ip)
                 next_login += rng.uniform(0.5, 2.0) * DAY

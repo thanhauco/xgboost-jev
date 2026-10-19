@@ -163,6 +163,8 @@ def generate_transactions(
             t += rng.expovariate(u.rate_per_day / 86400)
             hour_shift = 3600 * rng.choice([9, 12, 13, 18, 19, 20])
             ts = t - (t % 86400) + hour_shift + rng.uniform(0, 3000)
+            if ts >= start_ts + horizon:  # never emit past the requested number of days
+                break
             r = rng.random()
             if r < 0.12:
                 add(
