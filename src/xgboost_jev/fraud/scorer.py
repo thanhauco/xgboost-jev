@@ -90,11 +90,15 @@ class FraudDecision:
     jev_used: bool
     reasons: list[dict] = field(default_factory=list)
     latency_ms: float = 0.0
+    segment: str = ""
+    rule: str | None = None
+    jev_skipped: str | None = None  # budget | timeout | None
 
     def to_dict(self) -> dict:
+        """JSON-safe dict (NaN, e.g. no tabular score for a rule decision, becomes None)."""
         d = asdict(self)
         d["action"] = self.action.value
-        return d
+        return {k: (None if isinstance(v, float) and math.isnan(v) else v) for k, v in d.items()}
 
 
 def choose_decline_threshold(
