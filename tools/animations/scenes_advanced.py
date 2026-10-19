@@ -73,9 +73,12 @@ def graph_ring(c: Canvas, t: float):
         "Union-find components with fraud flags; fan-in exposes money-mule payees",
         "xgboost-jev / fraud",
     )
+    if t >= 17.6:
+        _graph_takeaway(c, t)
+        return
     payers = [(84, 170 + i * 44) for i in range(6)]
     M, D, M2 = (300, 300), (450, 205), (450, 395)
-    hub = (565, 300)
+    hub = (578, 392)
 
     for i, p in enumerate(payers):
         node(c, p, f"u{i + 1}", MUTED, seg(t, 0.4 + 0.12 * i, 0.9 + 0.12 * i), r=14)
@@ -121,7 +124,7 @@ def graph_ring(c: Canvas, t: float):
     c.text(912, 218, "1", 18, WARN, "bold", "ra", k=kp)
 
     # mule vs legit medians (benchmark)
-    kc = seg(t, 5.6, 6.2) * (1 - seg(t, 17.2, 17.8))
+    kc = seg(t, 5.6, 6.2) * (1 - seg(t, 12.6, 13.0))
     if kc > 0:
         c.text(658, 250, "FAN-IN ALONE IS NOT ENOUGH", 11, MUTED, "bold", k=kc)
         c.text(658, 268, "median on the evaluation period", 11, MUTED, k=kc)
@@ -217,10 +220,8 @@ def graph_ring(c: Canvas, t: float):
                 k=kn * seg(t, 10.0 + j * 0.03, 10.6),
             )
             c.circle(*p, 3.5, fill=MUTED, k=kn * seg(t, 10.0 + j * 0.03, 10.6))
-        c.text(hub[0], hub[1] + 66, "shared NAT IP, degree > 25:", 11, MUTED, anchor="mm", k=kn)
-        c.text(
-            hub[0], hub[1] + 82, "a hub - does NOT merge components", 11, WARN, "bold", "mm", k=kn
-        )
+        c.text(hub[0], hub[1] + 58, "NAT IP, degree > 25", 11, MUTED, anchor="mm", k=kn)
+        c.text(hub[0], hub[1] + 74, "hub: not merged", 11, WARN, "bold", "mm", k=kn)
 
     # chargeback label arrives
     if 11.0 < t < 12.4:
@@ -251,54 +252,6 @@ def graph_ring(c: Canvas, t: float):
     if t > 15.8:
         action_chip(c, 520, 470, "DECLINE", seg(t, 15.8, 16.3) * (1 - seg(t, 17.2, 17.8)))
 
-    # benchmark takeaway
-    kt = seg(t, 17.8, 18.4)
-    if kt > 0:
-        c.rect(120, 150, 720, 300, fill=PANEL, r=16, k=kt)
-        full = _row(f"{ADV}.static", "advanced hybrid (+Jev)", "pr_auc", 0.0)
-        nog = _row(f"{ADV}.group_ablation", "minus entity graph / payee", "pr_auc", 0.0)
-        mule = _row(f"{ADV}.static", "advanced hybrid (+Jev)", "per_scenario", {}).get("mule_ring")
-        c.text(
-            W / 2, 176, "What the benchmark says (mean over seeds)", 15, TEXT, "bold", "mm", k=kt
-        )
-        for i, (lab, v, col) in enumerate(
-            [("PR-AUC, all features", full, XGB), ("PR-AUC, graph features removed", nog, MUTED)]
-        ):
-            vv = v * seg(t, 18.0 + 0.3 * i, 19.0 + 0.3 * i)
-            c.text(170, 222 + i * 46, lab, 14, TEXT, k=kt)
-            c.bar(430, 226 + i * 46, 300, 14, vv / max(full, nog, 0.01), col, k=kt)
-            c.text(745, 233 + i * 46, f"{vv:.3f}", 15, col, "bold", "lm", k=kt)
-        c.text(
-            W / 2,
-            330,
-            "Reputation is learned from past rings. A model trained BEFORE a new ring exists",
-            14,
-            WARN,
-            "bold",
-            "mm",
-            k=kt * seg(t, 19.2, 19.8),
-        )
-        c.text(
-            W / 2,
-            352,
-            "still misses most of it until it is retrained once the first labels arrive:",
-            14,
-            WARN,
-            "bold",
-            "mm",
-            k=kt * seg(t, 19.2, 19.8),
-        )
-        if mule is not None:
-            c.text(
-                W / 2,
-                392,
-                f"static model, mule-ring recall at the alert budget: {mule:.2f}",
-                16,
-                TEXT,
-                "bold",
-                "mm",
-                k=kt * seg(t, 20.0, 20.6),
-            )
     caption(
         c,
         t,
@@ -318,7 +271,75 @@ def graph_ring(c: Canvas, t: float):
                 "A report arrives: fraud flags propagate to the whole component - no retrain needed",
             ),
             (13.0, 17.2, "The next payer to this payee carries the reputation as features"),
-            (17.8, 21.0, "Graph features are the single largest contributor in the ablation"),
+            (
+                17.8,
+                21.0,
+                "Honest read: a modest, noisy gain - and no help against a ring the model never saw",
+            ),
+        ],
+    )
+
+
+def _graph_takeaway(c: Canvas, t: float):
+    kt = seg(t, 17.6, 18.2)
+    if kt > 0:
+        c.rect(120, 150, 720, 300, fill=PANEL, r=16, k=kt)
+        full = _row(f"{ADV}.static", "advanced hybrid (+Jev)", "pr_auc", 0.0)
+        nog = _row(f"{ADV}.group_ablation", "minus entity graph / payee", "pr_auc", 0.0)
+        mule = _row(f"{ADV}.static", "advanced hybrid (+Jev)", "per_scenario", {}).get("mule_ring")
+        mule_wk = _row(f"{ADV}.continual", "weekly, bootstrap gate", "per_scenario", {}).get(
+            "mule_ring"
+        )
+        c.text(
+            W / 2, 176, "What the benchmark says (mean over 3 seeds)", 15, TEXT, "bold", "mm", k=kt
+        )
+        for i, (lab, v, col) in enumerate(
+            [("PR-AUC, all features", full, XGB), ("PR-AUC, graph features removed", nog, MUTED)]
+        ):
+            vv = v * seg(t, 18.0 + 0.3 * i, 19.0 + 0.3 * i)
+            c.text(170, 222 + i * 46, lab, 14, TEXT, k=kt)
+            c.bar(430, 226 + i * 46, 300, 14, vv / max(full, nog, 0.01), col, k=kt)
+            c.text(745, 233 + i * 46, f"{vv:.3f}", 15, col, "bold", "lm", k=kt)
+        c.text(
+            W / 2,
+            330,
+            "Seed-to-seed spread is about +/-0.2 PR-AUC, so this gap is within noise.",
+            14,
+            WARN,
+            "bold",
+            "mm",
+            k=kt * seg(t, 19.2, 19.8),
+        )
+        c.text(
+            W / 2,
+            352,
+            "Reputation also cannot help a model that never saw a ring before:",
+            14,
+            WARN,
+            "bold",
+            "mm",
+            k=kt * seg(t, 19.2, 19.8),
+        )
+        if mule is not None:
+            c.text(
+                W / 2,
+                392,
+                f"mule-ring recall at the alert budget: {mule:.2f} static, {mule_wk:.2f} with weekly retraining",
+                16,
+                TEXT,
+                "bold",
+                "mm",
+                k=kt * seg(t, 20.0, 20.6),
+            )
+    caption(
+        c,
+        t,
+        [
+            (
+                17.8,
+                21.0,
+                "Honest read: a modest, noisy gain - and no help against a ring the model never saw",
+            )
         ],
     )
 
@@ -355,6 +376,9 @@ def delayed_labels(c: Canvas, t: float):
         "Training at the cut sees only the labels that have arrived - and must not mistake silence for innocence",
         "xgboost-jev / fraud",
     )
+    if t >= 17.4:
+        _labels_takeaway(c, t)
+        return
     ya, yl = 330, 200
     k0 = seg(t, 0.4, 1.0)
     c.line([(X0, ya), (X1, ya)], MUTED, 2, k=k0)
@@ -378,7 +402,6 @@ def delayed_labels(c: Canvas, t: float):
         arrived = ld <= cursor and ld <= CUT
         if t > 7.0 and ld > CUT:
             is_prop = g == "ring" and t > 11.0
-            col = BAD if is_prop else MUTED
             c.circle(x, y, 8, fill=mix(BAD, 0.55) if is_prop else BG, outline=BAD, width=2, k=shown)
             if not is_prop:
                 c.text(x, y, "?", 11, BAD, "bold", "mm", k=shown)
@@ -475,7 +498,29 @@ def delayed_labels(c: Canvas, t: float):
                     "bold",
                     k=seg(t, 11.0, 11.6) * (1 - seg(t, 17.0, 17.6)),
                 )
-    # bench bars
+    caption(
+        c,
+        t,
+        [
+            (0.5, 3.0, "Frauds happen on the timeline; their labels arrive days to weeks later"),
+            (3.0, 7.0, "At the cut, only the labels that have already arrived are known"),
+            (
+                7.0,
+                8.2,
+                "Everything else looks legitimate - training would learn that fraud is fine",
+            ),
+            (8.2, 9.6, "Recent rows are dropped symmetrically: fraud AND legit, until they mature"),
+            (
+                9.6,
+                17.0,
+                "Confirmed fraud flows to rows that share the attacker's device, IP or payee",
+            ),
+            (17.6, 21.0, "Safeguards are measured, not assumed"),
+        ],
+    )
+
+
+def _labels_takeaway(c: Canvas, t: float):
     kb = seg(t, 17.6, 18.2)
     if kb > 0:
         c.rect(110, 128, 740, 336, fill=PANEL, r=16, k=kb)
@@ -515,26 +560,7 @@ def delayed_labels(c: Canvas, t: float):
             "mm",
             k=kb * seg(t, 20.0, 20.6),
         )
-    caption(
-        c,
-        t,
-        [
-            (0.5, 3.0, "Frauds happen on the timeline; their labels arrive days to weeks later"),
-            (3.0, 7.0, "At the cut, only the labels that have already arrived are known"),
-            (
-                7.0,
-                8.2,
-                "Everything else looks legitimate - training would learn that fraud is fine",
-            ),
-            (8.2, 9.6, "Recent rows are dropped symmetrically: fraud AND legit, until they mature"),
-            (
-                9.6,
-                17.0,
-                "Confirmed fraud flows to rows that share the attacker's device, IP or payee",
-            ),
-            (17.6, 21.0, "Safeguards are measured, not assumed"),
-        ],
-    )
+    caption(c, t, [(17.8, 21.0, "Safeguards are measured, not assumed")])
 
 
 # ============================================================================ 10. lifecycle
@@ -546,7 +572,16 @@ def lifecycle(c: Canvas, t: float):
         "Fraudsters adapt in days; chargebacks arrive in weeks",
         "xgboost-jev / fraud",
     )
-    weeks = [("day 42", 0.81, 6), ("day 49", 1.0, 11), ("day 56", 0.96, 13), ("day 63", 0.20, 5)]
+    from scenes import B
+
+    hist = (B.get(ADV, {}).get("history", {}) or {}).get("weekly, bootstrap gate", [])
+    weeks = [
+        (f"day {h['day']:g}", h["p_challenger_worse"], h["shadow_frauds"], h["promoted"])
+        for h in hist
+    ] or [("day 42", 0.81, 6, True), ("day 49", 1.0, 11, False)]
+    if t >= 12.2:
+        _lifecycle_late(c, t)
+        return
     # illustrative decision flow for one retrain
     kA = seg(t, 0.4, 1.0)
     c.rect(36, 130, 270, 190, fill=PANEL, outline=BAD, width=0, r=14, k=kA)
@@ -559,8 +594,8 @@ def lifecycle(c: Canvas, t: float):
     kB = seg(t, 1.5, 2.1)
     c.rect(340, 130, 270, 190, fill=PANEL, outline=XGB, width=0, r=14, k=kB)
     c.text(356, 146, "2  CHALLENGER", 12, XGB, "bold", k=kB)
-    c.text(356, 170, "warm-start from the champion", 13, TEXT, k=kB)
-    c.text(356, 190, "+120 boosting rounds on new data", 13, TEXT, k=kB)
+    c.text(356, 170, "cold retrain, or warm-start from", 13, TEXT, k=kB)
+    c.text(356, 190, "the champion (+120 rounds)", 13, TEXT, k=kB)
     c.text(356, 220, "trained on data older than the", 12, MUTED, k=kB)
     c.text(356, 238, "last 5 days (held out for shadow)", 12, MUTED, k=kB)
     c.arrow((612, 225), (642, 225), MUTED, seg(t, 2.3, 2.8), k=kB)
@@ -592,24 +627,54 @@ def lifecycle(c: Canvas, t: float):
     c.text(
         36,
         368,
-        "A naive 'must beat the champion' test is noise with 5-13 known frauds in the window.",
+        f"A naive 'must beat the champion' test is noise with {min(w[2] for w in weeks)}-{max(w[2] for w in weeks)} known frauds in the window.",
         12,
         MUTED,
         k=k2,
     )
-    for i, (day, pw, nf) in enumerate(weeks):
-        x = 60 + i * 225
+    for i, (day, pw, nf, promoted) in enumerate(weeks):
+        x = 52 + i * 218
         kk = seg(t, 7.4 + i * 0.7, 8.0 + i * 0.7)
-        c.rect(x - 14, 392, 205, 74, fill=PANEL, r=10, k=kk)
+        c.rect(x - 12, 392, 204, 74, fill=PANEL, r=10, k=kk)
         c.text(x, 402, day, 12, MUTED, "bold", k=kk)
-        c.text(x, 420, f"{nf} known frauds (illustrative)", 11, MUTED, k=kk)
+        c.text(x, 420, f"{nf} known frauds in shadow window", 11, MUTED, k=kk)
         c.text(x, 438, f"P(worse) = {pw:.2f}", 13, TEXT, k=kk)
-        if pw >= 0.9:
-            c.chip(x + 150, 408, "KEEP", WARN, k=kk, size=11, anchor="mm")
+        c.text(x, 454, "benchmark, seed 21", 10, MUTED, k=kk)
+        if not promoted:
+            c.chip(x + 146, 408, "KEEP", WARN, k=kk, size=11, anchor="mm")
         else:
-            c.chip(x + 150, 408, "PROMOTE", OK, k=kk, size=11, anchor="mm")
-    # benchmark takeaway
-    kt = seg(t, 12.4, 13.0)
+            c.chip(x + 146, 408, "PROMOTE", OK, k=kk, size=11, anchor="mm")
+    caption(
+        c,
+        t,
+        [
+            (
+                0.4,
+                3.0,
+                "Every week: retrain on the labels known now (cold, or warm-started from the champion)",
+            ),
+            (
+                3.0,
+                6.6,
+                "Shadow test: how likely is the challenger worse on the most recent labelled days?",
+            ),
+            (6.6, 12.4, "Only block a promotion when the evidence says it is worse"),
+            (
+                12.4,
+                15.6,
+                "Benchmark: the naive gate hurt; cold retraining scored highest; all within noise",
+            ),
+            (
+                15.6,
+                19.0,
+                "A small slice of traffic runs on the challenger; recall is watched per fraud type",
+            ),
+        ],
+    )
+
+
+def _lifecycle_late(c: Canvas, t: float):
+    kt = seg(t, 12.4, 13.0) * (1 - seg(t, 15.0, 15.5))
     if kt > 0:
         c.rect(100, 128, 760, 340, fill=PANEL, r=16, k=kt)
         c.text(
@@ -632,7 +697,7 @@ def lifecycle(c: Canvas, t: float):
         proms = [_row(f"{ADV}.continual", key, "promotions", None) for _l, key, _c in rows]
         top = max(vals + [0.01])
         c.text(160, 186, "PR-AUC", 11, MUTED, "bold", k=kt)
-        c.text(790, 186, "promotions", 11, MUTED, "bold", "ra", k=kt)
+        c.text(840, 186, "promotions", 11, MUTED, "bold", "ra", k=kt)
         for i, ((lab, _key, col), v, pr) in enumerate(zip(rows, vals, proms, strict=True)):
             vv = v * seg(t, 12.8 + 0.3 * i, 13.8 + 0.3 * i)
             y = 214 + i * 46
@@ -640,7 +705,7 @@ def lifecycle(c: Canvas, t: float):
             c.bar(380, y + 4, 300, 14, vv / top, col, k=kt)
             c.text(692, y + 11, f"{vv:.3f}", 15, col, "bold", "lm", k=kt)
             if pr is not None:
-                c.text(840, y + 11, f"{pr:g}", 15, TEXT, "bold", "ra", k=kt)
+                c.text(840, y + 11, f"{pr:g}", 15, TEXT, "bold", "rm", k=kt)
         c.text(
             W / 2,
             410,
@@ -708,17 +773,10 @@ def lifecycle(c: Canvas, t: float):
         t,
         [
             (
-                0.4,
-                3.0,
-                "Every week: retrain on the labels known now, warm-started from the live champion",
+                12.4,
+                15.5,
+                "Benchmark: the naive gate hurt; cold retraining scored highest; all within noise",
             ),
-            (
-                3.0,
-                6.6,
-                "Shadow test: how likely is the challenger worse on the most recent labelled days?",
-            ),
-            (6.6, 12.4, "Only block a promotion when the evidence says it is worse"),
-            (12.4, 15.6, "Benchmark: gates matter, but the windows are tiny - expect noise"),
             (
                 15.6,
                 19.0,
@@ -793,7 +851,7 @@ def counters_budget(c: Canvas, t: float):
     for ms in (0, 15, 30, 45, 60):
         c.line([(mx(ms), 190), (mx(ms), 200)], MUTED, 1, k=kr)
         c.text(mx(ms), 206, f"{ms}", 11, MUTED, anchor="mt", k=kr)
-    c.text(x1, 226, "ms", 11, MUTED, "ra", k=kr)
+    c.text(x1, 226, "ms", 11, MUTED, anchor="ra", k=kr)
     online = bget(f"{ADV}.online", {}) or {}
     names = list(online)
     tab = bget(f"{ADV}.online.{names[0]}.latency.tabular.p50_ms", 0.5) if names else 0.5
