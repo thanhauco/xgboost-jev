@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 
+from .bench_advanced import bench_fraud_advanced, render_advanced
 from .fraud import EscalationPolicy, RealTimeFraudScorer, generate_transactions, train_fraud_models
 from .fraud.features import FEATURE_NAMES
 from .guardrail import (
@@ -324,6 +325,8 @@ def render_markdown(res: dict) -> str:
         f"| PSI amount, with 1.6x inflation | {fr['drift']['amount_psi_x1.6_inflation']} |",
         "",
     ]
+    if "fraud_advanced" in res:
+        out += render_advanced(res["fraud_advanced"])
     return "\n".join(out)
 
 
@@ -334,6 +337,12 @@ def main(argv=None) -> None:
     ap.add_argument("--jev-latency-ms", type=float, default=25.0)
     ap.add_argument("--quick", action="store_true", help="smaller datasets for CI smoke runs")
     ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument(
+        "--advanced-seeds", default="", help="comma-separated seeds (default 21,22,23; quick: 21)"
+    )
+    ap.add_argument(
+        "--skip-advanced", action="store_true", help="skip the advanced fraud benchmark"
+    )
     a = ap.parse_args(argv)
     gs = (1200, 600) if a.quick else (4000, 2000)
     fs = (150, 10) if a.quick else (500, 30)
@@ -347,6 +356,15 @@ def main(argv=None) -> None:
         "guardrail": bench_guardrail(*gs, a.jev_latency_ms, a.seed),
         "fraud": bench_fraud(*fs, a.jev_latency_ms, a.seed),
     }
+    if not a.skip_advanced:
+        adv_kw = (
+            {"n_users": 200, "days": 45, "cut_day": 28.0, "mule_start_day": 30.0, "seeds": (21,)}
+            if a.quick
+            else {"n_users": 500, "days": 60, "cut_day": 35.0, "mule_start_day": 38.0}
+        )
+        if a.advanced_seeds:
+            adv_kw["seeds"] = tuple(int(x) for x in a.advanced_seeds.split(","))
+        res["fraud_advanced"] = bench_fraud_advanced(**adv_kw, jev_latency_ms=a.jev_latency_ms)
     Path(a.json).parent.mkdir(parents=True, exist_ok=True)
     Path(a.json).write_text(json.dumps(res, indent=2, default=str))
     Path(a.out).parent.mkdir(parents=True, exist_ok=True)
