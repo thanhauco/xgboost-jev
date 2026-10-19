@@ -8,6 +8,10 @@ version = "0.1.0"
 description = "Hybrid XGBoost + Jev pipelines for real-time prompt-injection guardrails and fraud detection"
 readme = "README.md"
 requires-python = ">=3.10"
+authors = [
+    { name = "Thanh", email = "thanhauco@gmail.com" },
+    { name = "Claude", email = "noreply@anthropic.com" },
+]
 dependencies = [
     "numpy>=1.24",
     "pandas>=2.0",
