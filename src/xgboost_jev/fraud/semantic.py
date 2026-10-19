@@ -31,6 +31,14 @@ FRAUD_QUESTIONS: tuple[Question, ...] = (
 )
 SEMANTIC_NAMES = [f"jev_{q.id}" for q in FRAUD_QUESTIONS]
 
+# Advanced stack: also reads in-session text (support chat, payment-reason answers).
+COACHING_QUESTION = Question(
+    "f_coached",
+    "Does the customer say someone (a 'bank', police, an agent) instructed them to move money?",
+)
+ADVANCED_FRAUD_QUESTIONS: tuple[Question, ...] = FRAUD_QUESTIONS + (COACHING_QUESTION,)
+ADVANCED_SEMANTIC_NAMES = [f"jev_{q.id}" for q in ADVANCED_FRAUD_QUESTIONS]
+
 
 def build_state(t: Transaction) -> str | None:
     parts = []
@@ -38,6 +46,8 @@ def build_state(t: Transaction) -> str | None:
         parts.append(f"Merchant: {t.merchant_descriptor}")
     if t.memo:
         parts.append(f"Memo: {t.memo}")
+    if getattr(t, "session_text", ""):
+        parts.append(f"Customer said: {t.session_text}")
     return "\n".join(parts) if parts else None
 
 

@@ -96,13 +96,30 @@ FRAUD_RULES: dict[str, list[Rule]] = {
             3.0,
         ),
     ],
+    "f_coached": [
+        (r"\b(told me|instructed|said) (to|not to)\b", 3.0),
+        (r"\b(on the phone|agent|fraud team|keep (them|it) safe|compromised)\b", 2.0),
+    ],
     "f_descriptor_spoof": [
         (r"\b(amaz0n|paypa1|app1e|g00gle|micr0soft|netf1ix)\b", 4.0),
         (r"\b(refund|verify|verification|unlock)[-_ ]?(center|desk|now|acct)\b", 2.5),
     ],
 }
 
-DEFAULT_RULES: dict[str, list[Rule]] = {**INJECTION_RULES, **FRAUD_RULES}
+TRIAGE_RULES: dict[str, list[Rule]] = {
+    "t_app_scam": [
+        (r"\b(safe account|told me|instructed|on the phone|scam|urgency|coercion|impersonat)", 2.0),
+        (r"payee name does not match", 1.5),
+    ],
+    "t_ato": [
+        (r"\b(password reset|login new device|new device|takeover|not seen for this user)\b", 1.5),
+    ],
+    "t_mule": [
+        (r"\b(many different senders|mule|confirmed fraud|linked account cluster)\b", 2.0),
+    ],
+}
+
+DEFAULT_RULES: dict[str, list[Rule]] = {**INJECTION_RULES, **FRAUD_RULES, **TRIAGE_RULES}
 _COUNTERFEIT = re.compile(INJECTION_RULES["p_counterfeit_policy"][0][0], re.I | re.M)
 
 
