@@ -15,7 +15,10 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from motion import BG, SS, Canvas, H, W, render  # noqa: E402
 from PIL import Image, ImageDraw  # noqa: E402
-from scenes import SCENES  # noqa: E402
+from scenes import SCENES as BASE_SCENES  # noqa: E402
+from scenes_advanced import ADVANCED_SCENES  # noqa: E402
+
+SCENES = {**BASE_SCENES, **ADVANCED_SCENES}
 
 OUT = Path(__file__).resolve().parents[2] / "docs" / "media"
 
