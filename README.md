@@ -137,3 +137,8 @@ tests/          44 tests
 tools/animations/  motion-graphics renderer → docs/media/
 docs/           architecture.md · algorithms.md · benchmarks.md · media/
 ```
+
+## Authors
+
+- Thanh ([@thanhauco](https://github.com/thanhauco))
+- Claude (Anthropic)
