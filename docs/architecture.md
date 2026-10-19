@@ -7,12 +7,13 @@
 
 Jev's answers become numeric columns that XGBoost can split on. XGBoost in turn covers Jev's weak spots: network latency, outages, and susceptibility to text that tries to steer an LLM-style reader.
 
-Two products are built on that idea:
+Two products are built on that idea (the fraud one in two generations):
 
 | Product | Package | Fast path | Where Jev is used |
 |---|---|---|---|
 | Prompt-injection guardrail | `xgboost_jev.guardrail` | metadata + hashed embeddings + XGBoost (~1.6 ms) | semantic feature columns, pre-filter, parallel voter |
-| Real-time fraud detection | `xgboost_jev.fraud` | streaming features + XGBoost (~0.25 ms) | escalation on payment text (memos, merchant descriptors) |
+| Real-time fraud detection (v1) | `xgboost_jev.fraud` | streaming features + XGBoost (~0.3 ms) | escalation on payment text (memos, merchant descriptors) |
+| Advanced fraud stack | `xgboost_jev.fraud` (`AdvancedFraudScorer`) | graph, decayed-counter, sequence and text features + XGBoost (~0.5 ms) | escalation on memos, descriptors and in-session text, subject to a latency budget |
 
 Every algorithm below also has a short animated explainer in [algorithms.md](algorithms.md).
 
@@ -28,7 +29,7 @@ flowchart LR
     end
 
     subgraph Service["xgboost_jev.serving (FastAPI)"]
-        API["/v1/guardrail/check<br/>/v1/fraud/score<br/>/metrics"]
+        API["/v1/guardrail/check<br/>/v1/fraud/score<br/>/v2/fraud/{score,events,labels,rules,case}<br/>/metrics"]
     end
 
     API --> R[LatencyRouter]
@@ -37,8 +38,12 @@ flowchart LR
     API --> FS[RealTimeFraudScorer]
     FS --> ST[(OnlineFeatureStore)]
     FS --> FM[FraudModels<br/>tabular + hybrid XGBoost]
+    API --> AS[AdvancedFraudScorer]
+    AS --> AF[("AdvancedFeaturizer<br/>graph · decayed counters · risk<br/>sequences · text signals")]
+    AS --> AM[AdvancedModels<br/>calibrated tabular + hybrid]
+    AS --> RU[RulesEngine]
 
-    R & E & FS --> J[ResilientJevClient]
+    R & E & FS & AS --> J[ResilientJevClient]
     J -->|cache / breaker / fallback| H[HttpJevClient]
     H -->|POST state + questions| JEV[(Jev API)]
     J -.offline.-> M[MockJevClient]
@@ -52,14 +57,17 @@ flowchart LR
 flowchart TB
     jev["jev/<br/>schema · client · mock · resilience"]
     guard["guardrail/<br/>features · embeddings · cascade · ensemble · router · mock_data"]
-    fraud["fraud/<br/>schema · store · features · semantic · scorer · explain · mock_data"]
+    fraud["fraud/ v1<br/>schema · store · features · semantic · scorer · explain · mock_data"]
+    adv["fraud/ advanced<br/>pipeline · graph · decay · kv · risk · sequence · textsig · labels<br/>advanced · calibration · rules · lifecycle · analyst · scaling · mock_advanced"]
     mon["monitoring/<br/>drift · metrics"]
     serve["serving/api"]
     bench["bench"]
     guard --> jev
     fraud --> jev
-    serve --> guard & fraud & mon & jev
-    bench --> guard & fraud & mon & jev
+    adv --> fraud
+    adv --> jev
+    serve --> guard & fraud & adv & mon & jev
+    bench --> guard & fraud & adv & mon & jev
 ```
 
 `jev` depends on nothing else in the repo. Neither `guardrail` nor `fraud` imports the other, so either one can be deployed alone.
@@ -188,12 +196,12 @@ The counterfeit guard closes the obvious bypass, where an attacker tricks Stage 
 
 ## 4. Real-time fraud detection (`xgboost_jev.fraud`)
 
-### Scoring flow
+### v1 scoring flow
 
 ```mermaid
 flowchart LR
     TX[Transaction] --> F["compute(txn)<br/>read history < t"]
-    F --> TAB["Tabular XGBoost<br/>35 streaming features · ~0.25 ms"]
+    F --> TAB["Tabular XGBoost<br/>35 streaming features · ~0.3 ms"]
     F --> OBS["observe(txn)<br/>write event"]
     TAB --> ESC{"text present AND amount ≥ $20<br/>AND (p_tab in [0.02, 0.9] OR channel = p2p)?"}
     ESC -- no --> P1["tabular policy"]
@@ -203,7 +211,7 @@ flowchart LR
     P1 & P2 --> ACT["APPROVE / STEP_UP / REVIEW / DECLINE<br/>+ SHAP reason codes"]
 ```
 
-- **Two boosters, two policies.** The hybrid model sees extra evidence, so its score distribution differs from the tabular one. Each model gets its own cost-tuned `DecisionPolicy`. The online test exposed what happens otherwise: applying the hybrid's 0.13 threshold to tabular scores declined 39% of legitimate small purchases.
+- **Two boosters, two policies.** The hybrid model sees extra evidence, so its score distribution differs from the tabular one. Each model gets its own cost-tuned `DecisionPolicy`. An online test exposed what happens otherwise: applying a threshold tuned on the hybrid's scores to the tabular scores declined a large share of legitimate small purchases.
 - **Selective escalation.** The tabular fast path never waits on the network. Only about 10% of benchmark traffic called Jev. P2P always escalates, because authorized-push-payment scams look normal on every tabular feature: the victim pays from their own phone at home.
 - **`score_batch`.** State updates stay strictly in event order, while the escalated Jev calls fan out concurrently. It is verified bit-identical to sequential scoring.
 
@@ -254,14 +262,146 @@ A test asserts that replayed training features and online features are identical
 
 ---
 
-## 5. Monitoring (`xgboost_jev.monitoring`)
+## 5. Advanced fraud stack (`AdvancedFraudScorer`)
+
+The v1 scorer sees one transaction at a time. The advanced stack adds the context fraud actually lives in: who is linked to whom, how an account's behaviour has changed, and what was *known* when a model was trained. Section 5.8 reports what each part is worth in the benchmark, and where it is not.
+
+### 5.1 One event stream, one featurizer
+
+```mermaid
+flowchart LR
+    subgraph Stream["time-ordered events"]
+        L[LabelEvent<br/>chargeback · report · analyst]
+        A[AccountEvent<br/>login · password reset · new payee]
+        T[Transaction]
+    end
+    L -->|fraud flags, risk tables| FZ
+    A -->|sequence store, login edges| FZ
+    T -->|"compute (read) then observe (write)"| FZ
+    FZ["AdvancedFeaturizer<br/>35 v1 + 39 advanced features"] --> X[(feature row)]
+```
+
+At equal timestamps labels apply first, then account events, then payments. Training replay (`replay_advanced`) and online scoring drive the same object, so features are point-in-time correct by construction. A test replays a prefix of the stream and asserts it reproduces the same feature rows.
+
+### 5.2 Entity graph and mule detection
+
+`EntityGraph` keeps a union-find over `user`, `card`, `device`, `ip` and `payee` entities, with component size and a confirmed-fraud count per component.
+
+- **Hub protection.** An entity with degree above 25 (a corporate NAT IP, a shared kiosk) stops merging components, or one public IP would join the whole customer base into one cluster.
+- **Reputation without retraining.** `mark_fraud` is called whenever a label arrives; the next payment to a flagged payee or device sees `g_payee_fraud`, `g_comp_fraud`, `g_2hop_fraud` and so on immediately. A model still has to be trained on rows where such reputation preceded fraud before it learns to rely on it.
+- **Payee fan-in.** `payee_fan_in_7d`, `payee_age_days`, `payee_new_for_user`. Landlords and utilities also have high fan-in, so the signal is the combination: young payee, new to this payer, many distinct senders, shared infrastructure.
+
+### 5.3 State that scales
+
+`DecayedCounterStore` keeps, per entity and half-life (1 h, 1 d, 7 d, 30 d), a decayed count and sum: `value ← value · 2^(−Δt/h) + x`. Memory and read cost are constant however busy the entity is, and the state is a flat dict, so it maps onto a Redis hash (`RedisKV`; any object with `get`/`put` works). A 30-day baseline costs the same as a 1-hour window. `partition_for(card_id, n)` routes each card to one scorer partition, and `PartitionedScorer` broadcasts labels and account events to all partitions.
+
+Not everything is shared yet: the velocity deques, the entity graph and the sequence store are still in-process. Scaling out therefore needs partitioning by card for those, plus a shared graph service for cross-card links (see limitations).
+
+### 5.4 Other feature groups
+
+| Group | What it captures |
+|---|---|
+| Merchant and peer risk (`RiskTables`) | Bayesian-smoothed, time-decayed fraud rate per merchant and MCC, updated when labels arrive, plus the amount's z-score within a peer segment (channel × tenure). Point-in-time: counts grow when a transaction is seen, fraud counts only when its label arrives. |
+| Account-event sequence (`SequenceStore`) | Hours since each risky event (new-device login, password reset, MFA or profile change, new payee), a "reset then payee within 48 h" flag, and Markov surprise: the mean −log P(next \| previous) of the user's recent chain under a transition model learned online. |
+| Local text signals | `cop_similarity` (payee name typed by the payer vs the name on the receiving account, token-sorted with initials credit) and look-alike merchant descriptors (leetspeak normalisation, brand similarity, "refund / verify / support" tokens). These cost microseconds and need no network. |
+| Device signals | Emulator and rooted flags from a client SDK; NaN when not reported. |
+| Jev semantic | The v1 questions plus a coaching question over in-session text ("someone told me to move this money"). |
+
+### 5.5 Training on delayed labels
+
+Chargebacks arrive weeks after the fraud, so a model trained "now" must not mistake silence for innocence.
+
+```mermaid
+flowchart LR
+    LS[(LabelStore<br/>label + arrival time)] -->|known_as_of cut| Y[labels known at the cut]
+    Y --> P["propagate_entity_labels<br/>by fraud type"]
+    P --> M["maturity filter<br/>drop the last 7 days: fraud AND legit"]
+    M --> TR[train tabular + hybrid]
+    TR --> CAL[isotonic calibration<br/>on a later slice]
+    CAL --> POL[segment decision policies]
+```
+
+- **Symmetric maturity.** Only transactions older than 7 days are used, fraud and legit alike. An earlier version kept recent *known* fraud while dropping recent *unlabelled* rows, so the newest data was almost all positive and the model learned "recent = fraud" from any feature that drifts with time.
+- **Propagation by fraud type.** Confirmed fraud labels rows that share the attacker's infrastructure within 30 days. The linking key depends on the fraud type: device and IP for card testing and account takeover, the receiving payee for scams and mules. Linking victim-side fraud through the victim's own device would label that customer's genuine purchases as fraud, so it is not done. Shared devices and IPs used by many accounts are skipped.
+- **Monotone constraints.** Evidence features (merchant risk, confirmed-fraud flags, look-alike signals, Jev probabilities) are constrained so more evidence never lowers the score. This was added to stop narrow bands being learned from rows where few labels had arrived; the benchmark finds it neutral overall.
+- **Jev dropout.** As in the guardrail, a fraction of training rows has Jev columns set to NaN.
+
+### 5.6 Calibration, policies and the decision path
+
+`IsotonicCalibrator` is fitted on a later slice of the training window, and `SegmentedPolicy` tunes cost-optimal thresholds per segment (channel × tenure), falling back to a global policy where a segment has too few positives. Read the measured limits before relying on either:
+
+- The training and calibration slices contain fewer frauds than reality, because recent fraud is not yet labelled (about 0.5% in training against about 1.2% in the evaluation period in the benchmark). Calibrating on them cannot fix that, and scores in the alert queue come out under-confident.
+- Isotonic regression maps most scores to exactly 0, so calibrated scores have very low resolution: 8 distinct values (99.4% exactly 0) against about 30,000 for the raw scores in the benchmark's first seed. **Rank by raw score when working to an alert budget**; use calibrated scores only against absolute thresholds.
+- The two operating modes behave very differently. In that seed the deployed policy (calibrated score, segment thresholds) flagged 0.6% of payments with precision 0.97 and recall 0.47, whereas ranking by raw score at a 1.5% alert budget gave recall 0.68 at precision 0.55. The policy is conservative because the scores are under-confident.
+- Per-segment thresholds did not reduce expected cost in the benchmark; the global threshold was as good or slightly better.
+
+`RulesEngine` runs before the model. Rules are plain data (`field`, `op`, `value`, with `all`-conditions, a priority and an optional expiry), never evaluated as code, and can be added over `POST /v2/fraud/rules` to react to an attack in minutes. A rule hit returns `model="rule"` with the rule id.
+
+### 5.7 Online scoring, budgets and the model lifecycle
+
+```mermaid
+flowchart LR
+    TX[Transaction] --> FZ[features]
+    FZ --> RU{rule hit?}
+    RU -- yes --> RD["decision: model = rule"]
+    RU -- no --> TAB[tabular XGBoost, calibrated]
+    TAB --> ESC{"escalate to Jev?<br/>text, amount, p_tab or P2P"}
+    ESC -- no --> POL
+    ESC -- yes --> BUD{"elapsed + 1.2 × Jev estimate<br/>within budget?"}
+    BUD -- no --> SKIP["skip: jev_skipped = budget"] --> POL
+    BUD -- yes --> HYB[Jev + hybrid XGBoost] --> POL
+    POL["segment policy → action<br/>+ reason codes + segment"]
+```
+
+A Jev timeout raises the latency estimate, so later requests skip Jev on budget instead of waiting it out. The estimate is an exponential moving average of observed Jev latency.
+
+```mermaid
+flowchart LR
+    LB[labels known now] --> CH["challenger<br/>(cold or warm-started)"]
+    CH --> SH[shadow test on the last 5 days]
+    SH --> G{"bootstrap P(worse) ≥ 0.9?"}
+    G -- no --> PR[promote]
+    G -- yes --> KP[keep champion]
+    PR --> CC["ChampionChallenger<br/>5% of traffic by hash of txn id"]
+    CC --> RM["RecallMonitor<br/>rolling recall per fraud type"]
+```
+
+The shadow window holds only the handful of frauds already reported (9–10 per window in the benchmark), so a raw "challenger ≥ champion" test is mostly noise; the bootstrap blocks a promotion only when the evidence says the challenger is probably worse. `RecallMonitor` tracks recall per fraud type as labels arrive and alerts on a drop against that type's own baseline.
+
+`AnalystAssistant` builds a case file for a decision (a deterministic narrative from the reason codes and the account timeline) and asks Jev three triage questions about it. Analyst verdicts return as `LabelEvent(source="analyst")`, which reach the graph and risk tables immediately and the next retrain through the label store.
+
+### 5.8 What the benchmark shows
+
+Full tables are in [benchmarks.md](benchmarks.md), reported as mean ± standard deviation over 3 generator seeds. The data is synthetic, built to include rings, mules, delayed labels and concept drift, and Jev is the keyword mock. Evaluation is at a fixed 1.5% alert budget after training at day 35 on the labels known by then.
+
+| Model (static, trained once) | PR-AUC | Recall at alert budget |
+|---|---:|---:|
+| v1 features, tabular | 0.477 ± 0.330 | 0.514 ± 0.262 |
+| v1 features + Jev | 0.506 ± 0.332 | 0.526 ± 0.244 |
+| advanced features, tabular | 0.701 ± 0.040 | 0.687 ± 0.033 |
+| advanced features + Jev | 0.716 ± 0.025 | 0.700 ± 0.028 |
+
+What holds up, and what does not:
+
+- **Advanced features: higher and far more stable.** Mean PR-AUC is 0.72 vs 0.51, and the seed-to-seed spread falls from 0.33 to 0.03. With three seeds this is indicative, not conclusive.
+- **Label propagation matters most.** Without it PR-AUC falls from 0.72 to 0.30, and recall on the low-and-slow ring from 0.95 to 0.09. Training on oracle labels (not achievable in production) reaches 0.81, so late labels are still the bottleneck.
+- **Jev adds almost nothing on top of the local text signals here** (0.716 vs 0.701; the Jev columns carry under 1% of gain). In v1 the same Jev features helped because nothing local covered payee-name mismatches or look-alike descriptors. This is a property of the mock, whose lexicon is a poor stand-in for a real semantic model; it says nothing about real Jev.
+- **Weekly retraining is about equal to training once** (0.73 vs 0.72), and the gate variants differ within noise.
+- **Monotone constraints are neutral** (0.711 vs 0.716).
+- **Per-segment thresholds did not help** (slightly worse expected cost than one global threshold), and calibration barely changed the Brier score.
+- **A ring the model has never seen is mostly missed** (mule-ring recall about 0.36 for the static model, about 0.4 with weekly retraining). Its features are clearly separable after the fact, but a model trained before the ring existed has not learned to use them.
+- **Leave-one-group-out** shows modest, noisy contributions from every group (largest drops from removing the sequence or graph groups), with seed spreads up to 0.23. Do not choose features from it; choose them on a time-later validation slice of your own data.
+
+---
+
+## 6. Monitoring (`xgboost_jev.monitoring`)
 
 - **PSI.** `psi(expected, actual)` uses quantile bins from the reference plus a dedicated **NaN bucket**, so a rising Jev-outage rate shows up as drift. Rule of thumb: below 0.1 is stable, 0.1–0.25 is moderate, above 0.25 should alert. `DriftMonitor` keeps a rolling window per feature.
 - **Latency.** `LatencyRecorder` is a thread-safe ring buffer with p50/p95/p99 per path (`guardrail_stage1`, `guardrail_stage2`, `fraud_tabular`, `fraud_hybrid`), exposed at `GET /metrics` together with router stats.
 
 ---
 
-## 6. Serving
+## 7. Serving
 
 `xgbjev-serve` (FastAPI + uvicorn) is configured through environment variables:
 
@@ -272,15 +412,17 @@ A test asserts that replayed training features and online features are identical
 | `XGBJEV_GUARDRAIL_MODEL` | directory written by `GuardrailModel.save` (static model, `use_jev=False`) |
 | `XGBJEV_FRAUD_MODEL` | directory written by `FraudModels.save` |
 
-If a model path is unset, a small model is trained on mock data at startup, which suits demos only.
+If a model path is unset, a small model is trained on mock data at startup, which suits demos only. The `/v2/fraud/*` endpoints need an `AdvancedFraudScorer` passed to `create_app(..., advanced=...)`; without one they return 503. They take transactions, account events, labels (including analyst verdicts), rules and case-file requests.
 
 The feature store is in-process, so a single replica must own each card's events. To scale out, either partition the stream by `card_id` (consistent hashing, or Kafka partitions keyed by card) or implement the store's `window` / `profile` / `observe` methods on a shared low-latency store.
 
 ---
 
-## 7. Known limitations
+## 8. Known limitations
 
 - **Mock data and mock Jev.** All results come from synthetic data and a lexicon stand-in for Jev. They show relative behaviour, not production accuracy. In particular, the fraud hybrid's lift is partly circular, since the mock Jev's lexicon and the mock scam memos share vocabulary. Two scam memos and one spoof descriptor deliberately avoid that vocabulary.
 - **Unverified Jev API.** The Jev response format and the latencies are assumptions. The 25 ms benchmark round trip is simulated.
-- **Single-process store.** The feature store is single-process with in-memory state. Losing the process loses the velocity windows.
-- **No calibration step.** Probabilities are calibrated only implicitly, via `scale_pos_weight` and thresholds tuned on validation. Add isotonic calibration if scores must be interpreted as probabilities.
+- **Partly single-process state.** The decayed counters, risk tables and peer statistics take a shared key-value backend, but the velocity deques, entity graph and sequence store are in-process. Losing a process loses that state, and scaling out needs card partitioning plus a shared graph service.
+- **Label delay limits everything.** Training slices hold fewer frauds than reality, so absolute scores are under-confident, calibration cannot repair that, and calibrated scores are coarse. Use alert-budget operation (rank by raw score) until labels mature.
+- **A new ring is invisible until labelled.** Rules and analyst verdicts are the fast path; a retrain helps only after labels for the ring arrive.
+- **Small samples.** Shadow windows hold about ten known frauds and the benchmark about 380 evaluation frauds in its first seed, so most differences between variants are within noise. Re-run on your own labelled data before relying on any ranking in this repository.
