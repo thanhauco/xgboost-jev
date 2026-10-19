@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "xgboost-jev"
+version = "0.1.0"
+description = "Hybrid XGBoost + Jev pipelines for real-time prompt-injection guardrails and fraud detection"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "scikit-learn>=1.3",
+    "xgboost>=2.0",
+    "httpx>=0.25",
+]
+
+[project.optional-dependencies]
+serve = ["fastapi>=0.110", "uvicorn>=0.27"]
+dev = ["pytest>=8", "ruff>=0.5", "fastapi>=0.110"]
+
+[project.scripts]
+xgbjev-bench = "xgboost_jev.bench:main"
+xgbjev-serve = "xgboost_jev.serving.api:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]  # line length is owned by `ruff format`; long regex literals stay unwrapped
