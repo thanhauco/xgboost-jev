@@ -69,15 +69,16 @@ def monotone_constraints(names: list[str]) -> str:
 
 
 def fit_booster(
-    x, y, names, x_es, y_es, rounds=400, seed=0, xgb_model=None, params=None
+    x, y, names, x_es, y_es, rounds=400, seed=0, xgb_model=None, params=None, monotone=True
 ) -> xgb.Booster:
     p = {
         **PARAMS,
         **(params or {}),
         "seed": seed,
-        "monotone_constraints": monotone_constraints(names),
         "scale_pos_weight": float((y == 0).sum() / max((y == 1).sum(), 1)),
     }
+    if monotone:
+        p["monotone_constraints"] = monotone_constraints(names)
     dtr = xgb.DMatrix(x, label=y, feature_names=names)
     evals = []
     if x_es is not None and len(y_es) and 0 < y_es.sum() < len(y_es):
@@ -188,6 +189,7 @@ def train_advanced(
     init: AdvancedModels | None = None,
     update_rounds: int = 120,
     propagate: bool = True,
+    monotone: bool = True,
 ) -> AdvancedModels:
     """Train tabular + hybrid boosters using only labels known at ``as_of``.
 
@@ -223,10 +225,26 @@ def train_advanced(
     xh_tr[rng.random(len(tr)) < jev_dropout, len(tabular_names) :] = np.nan
     n_rounds = update_rounds if init else rounds
     tab = fit_booster(
-        xt[tr], y[tr], tabular_names, xt[ca], y[ca], n_rounds, seed, init.tabular if init else None
+        xt[tr],
+        y[tr],
+        tabular_names,
+        xt[ca],
+        y[ca],
+        n_rounds,
+        seed,
+        init.tabular if init else None,
+        monotone=monotone,
     )
     hyb = fit_booster(
-        xh_tr, y[tr], hyb_names, xh[ca], y[ca], n_rounds, seed, init.hybrid if init else None
+        xh_tr,
+        y[tr],
+        hyb_names,
+        xh[ca],
+        y[ca],
+        n_rounds,
+        seed,
+        init.hybrid if init else None,
+        monotone=monotone,
     )
     p_tab, p_hyb = tab.inplace_predict(xt[ca]), hyb.inplace_predict(xh[ca])
     cal_t, cal_h = IsotonicCalibrator.fit(p_tab, y[ca]), IsotonicCalibrator.fit(p_hyb, y[ca])

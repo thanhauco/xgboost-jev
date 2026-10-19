@@ -258,6 +258,20 @@ def generate_advanced_stream(
                 )
             elif r < 0.40:
                 emu = rng.random() < 0.004
+                q = rng.random()
+                if q < 0.30:  # long tail of small web shops: low-volume merchants are mostly legit
+                    k = rng.randint(0, 2500)
+                    mk = {"merchant": ("5999", f"SHOP{k} ONLINE"), "merchant_id": f"shop_{k}"}
+                elif q < 0.33:  # legit gamers buy at the same resellers fraudsters use
+                    mk = {
+                        "merchant": (
+                            "5816",
+                            rng.choice(["GAMECOINS STORE", "GIFTCARD DEPOT", "DIGITAL KEYS"]),
+                        ),
+                        "merchant_id": f"dk_{rng.randint(0, 5)}",
+                    }
+                else:
+                    mk = {"merchant": ("5999", rng.choice(LEGIT_DESCRIPTORS))}
                 add(
                     u,
                     ts,
@@ -265,8 +279,8 @@ def generate_advanced_stream(
                     0,
                     "legit",
                     channel="ecommerce",
-                    merchant=("5999", rng.choice(LEGIT_DESCRIPTORS)),
                     is_emulator=emu,
+                    **mk,
                 )
             else:
                 add(u, ts, rng.lognormvariate(u.mu, 0.6), 0, "legit")
@@ -287,6 +301,11 @@ def generate_advanced_stream(
         dev, ip = f"dx{rng.randint(0, 60)}", f"185.220.{rng.randint(0, 9)}.{rng.randint(1, 254)}"
         far = jitter(rng.choice(CITIES))
         for k in range(rng.randint(4, 10)):
+            if rng.random() < 0.5:  # testers also hit mainstream merchants
+                mk = {"merchant": ("5999", rng.choice(LEGIT_DESCRIPTORS))}
+            else:
+                j = rng.randint(0, 2500)
+                mk = {"merchant": ("5999", f"SHOP{j} ONLINE"), "merchant_id": f"shop_{j}"}
             add(
                 u,
                 ts + k * rng.uniform(15, 90),
@@ -296,10 +315,9 @@ def generate_advanced_stream(
                 channel="ecommerce",
                 device=dev,
                 ip=ip,
-                merchant=("5816", f"DIGITAL GOODS {k}"),
-                merchant_id=f"dg_{rng.randint(0, 99)}",
                 loc=far,
                 is_emulator=rng.random() < 0.5,
+                **mk,
             )
         add(
             u,
@@ -310,7 +328,7 @@ def generate_advanced_stream(
             channel="ecommerce",
             device=dev,
             ip=ip,
-            merchant=("5999", "ELECTRONICS HUB"),
+            merchant=("5999", rng.choice(LEGIT_DESCRIPTORS)),
             loc=far,
         )
     for _ in range(n_ep(14)):  # classic ATO
@@ -318,6 +336,10 @@ def generate_advanced_stream(
         dev, ip = f"dx{rng.randint(0, 60)}", f"185.220.{rng.randint(0, 9)}.{rng.randint(1, 254)}"
         far = jitter(rng.choice(CITIES))
         for k in range(rng.randint(2, 3)):
+            if rng.random() < 0.4:
+                mk = {"merchant": (rng.choice(["6051", "7995", "6540"]), "COINS & CARDS")}
+            else:
+                mk = {"merchant": ("5999", rng.choice(LEGIT_DESCRIPTORS))}
             add(
                 u,
                 ts + k * rng.uniform(120, 900),
@@ -327,8 +349,8 @@ def generate_advanced_stream(
                 channel="ecommerce",
                 device=dev,
                 ip=ip,
-                merchant=(rng.choice(["6051", "7995", "6540"]), "COINS & CARDS"),
                 loc=far,
+                **mk,
             )
     for _ in range(n_ep(12)):  # impossible travel
         u, ts = rng.choice(users), when()
