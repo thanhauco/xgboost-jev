@@ -1,0 +1,252 @@
+{
+  "environment": {
+    "date": "2026-10-18",
+    "python": "3.13.16",
+    "xgboost": "3.4.1",
+    "machine": "x86_64"
+  },
+  "guardrail": {
+    "n_train": 4000,
+    "n_test": 2000,
+    "train_seconds": 7.11,
+    "models": {
+      "Jev only (noisy-OR)": {
+        "roc_auc": 0.887,
+        "pr_auc": 0.869,
+        "precision": 0.854,
+        "recall": 0.821,
+        "fpr": 0.095,
+        "threshold": 0.5
+      },
+      "Jev only, counterfeit-steered": {
+        "roc_auc": 0.854,
+        "pr_auc": 0.847,
+        "precision": 0.835,
+        "recall": 0.709,
+        "fpr": 0.095,
+        "threshold": 0.5
+      },
+      "XGBoost static (meta + embeddings)": {
+        "roc_auc": 0.989,
+        "pr_auc": 0.985,
+        "precision": 0.899,
+        "recall": 0.955,
+        "fpr": 0.073,
+        "threshold": 0.264
+      },
+      "Cascade (meta + emb + Jev)": {
+        "roc_auc": 0.993,
+        "pr_auc": 0.99,
+        "precision": 0.9,
+        "recall": 0.968,
+        "fpr": 0.073,
+        "threshold": 0.198
+      },
+      "Cascade during Jev outage (Jev=NaN)": {
+        "roc_auc": 0.991,
+        "pr_auc": 0.986,
+        "precision": 0.888,
+        "recall": 0.969,
+        "fpr": 0.083,
+        "threshold": 0.198
+      },
+      "Ensemble (static XGB + steered Jev)": {
+        "roc_auc": 0.961,
+        "pr_auc": 0.943,
+        "precision": 0.807,
+        "recall": 0.955,
+        "fpr": 0.155,
+        "threshold": 0.5
+      }
+    },
+    "per_kind_accuracy": {
+      "Jev only (noisy-OR)": {
+        "benign": 1.0,
+        "counterfeit_policy": 0.692,
+        "direct": 1.0,
+        "hard_negative": 0.682,
+        "indirect": 1.0,
+        "jailbreak": 1.0,
+        "obfuscated": 1.0,
+        "paraphrased": 0.0,
+        "tool_abuse": 1.0
+      },
+      "Jev only, counterfeit-steered": {
+        "benign": 1.0,
+        "counterfeit_policy": 0.0,
+        "direct": 1.0,
+        "hard_negative": 0.682,
+        "indirect": 1.0,
+        "jailbreak": 1.0,
+        "obfuscated": 1.0,
+        "paraphrased": 0.0,
+        "tool_abuse": 1.0
+      },
+      "XGBoost static (meta + embeddings)": {
+        "benign": 0.995,
+        "counterfeit_policy": 1.0,
+        "direct": 1.0,
+        "hard_negative": 0.766,
+        "indirect": 1.0,
+        "jailbreak": 1.0,
+        "obfuscated": 1.0,
+        "paraphrased": 0.657,
+        "tool_abuse": 1.0
+      },
+      "Cascade (meta + emb + Jev)": {
+        "benign": 0.998,
+        "counterfeit_policy": 1.0,
+        "direct": 1.0,
+        "hard_negative": 0.761,
+        "indirect": 1.0,
+        "jailbreak": 1.0,
+        "obfuscated": 1.0,
+        "paraphrased": 0.752,
+        "tool_abuse": 1.0
+      },
+      "Cascade during Jev outage (Jev=NaN)": {
+        "benign": 0.996,
+        "counterfeit_policy": 1.0,
+        "direct": 1.0,
+        "hard_negative": 0.73,
+        "indirect": 1.0,
+        "jailbreak": 1.0,
+        "obfuscated": 1.0,
+        "paraphrased": 0.762,
+        "tool_abuse": 1.0
+      },
+      "Ensemble (static XGB + steered Jev)": {
+        "benign": 0.995,
+        "counterfeit_policy": 1.0,
+        "direct": 1.0,
+        "hard_negative": 0.49,
+        "indirect": 1.0,
+        "jailbreak": 1.0,
+        "obfuscated": 1.0,
+        "paraphrased": 0.657,
+        "tool_abuse": 1.0
+      }
+    },
+    "router": {
+      "sample": 400,
+      "jev_latency_ms": 25.0,
+      "short_circuit_rate": 0.868,
+      "stage1_allow": 257,
+      "stage1_block": 90,
+      "stage2": 53,
+      "counterfeit_escalations": 11,
+      "recall": 0.814,
+      "fpr": 0.013,
+      "latency": {
+        "stage1": {
+          "mean_ms": 23.024,
+          "p50_ms": 25.333,
+          "p95_ms": 25.449,
+          "p99_ms": 25.515
+        },
+        "stage2": {
+          "mean_ms": 52.363,
+          "p50_ms": 52.657,
+          "p95_ms": 54.293,
+          "p99_ms": 54.384
+        },
+        "all": {
+          "mean_ms": 26.911,
+          "p50_ms": 25.346,
+          "p95_ms": 53.1,
+          "p99_ms": 54.233
+        }
+      }
+    },
+    "static_xgb_ms_per_text": 1.62
+  },
+  "fraud": {
+    "n_transactions": 46106,
+    "fraud_rate": 0.0121,
+    "train_seconds": 4.97,
+    "metrics": {
+      "tabular": {
+        "roc_auc": 0.9980928132685555,
+        "pr_auc": 0.9752487031609445
+      },
+      "hybrid": {
+        "roc_auc": 0.9999106827150563,
+        "pr_auc": 0.9941918582711179
+      },
+      "n_train": 32274,
+      "n_valid": 13832,
+      "valid_fraud": 139
+    },
+    "decline_threshold": {
+      "tabular": 0.15,
+      "hybrid": 0.05
+    },
+    "per_scenario": {
+      "account_takeover": {
+        "n": 13,
+        "tabular_recall": 1.0,
+        "hybrid_recall": 1.0
+      },
+      "app_scam": {
+        "n": 10,
+        "tabular_recall": 0.7,
+        "hybrid_recall": 1.0
+      },
+      "card_testing": {
+        "n": 97,
+        "tabular_recall": 1.0,
+        "hybrid_recall": 1.0
+      },
+      "descriptor_spoof": {
+        "n": 12,
+        "tabular_recall": 0.667,
+        "hybrid_recall": 0.917
+      },
+      "impossible_travel": {
+        "n": 7,
+        "tabular_recall": 1.0,
+        "hybrid_recall": 1.0
+      }
+    },
+    "false_positive_rate": {
+      "tabular": 0.00029,
+      "hybrid": 0.0008
+    },
+    "online": {
+      "window": 3000,
+      "jev_latency_ms": 25.0,
+      "escalation_rate": 0.0987,
+      "latency": {
+        "tabular": {
+          "mean_ms": 0.293,
+          "p50_ms": 0.244,
+          "p95_ms": 0.513,
+          "p99_ms": 1.076
+        },
+        "hybrid": {
+          "mean_ms": 26.08,
+          "p50_ms": 25.963,
+          "p95_ms": 26.908,
+          "p99_ms": 27.641
+        },
+        "all": {
+          "mean_ms": 2.837,
+          "p50_ms": 0.262,
+          "p95_ms": 25.959,
+          "p99_ms": 26.484
+        }
+      },
+      "actions": {
+        "approve": 2951,
+        "decline": 45,
+        "review": 4
+      },
+      "batch_throughput_tps": 3270.0,
+      "tabular_predict_us": 590.6
+    },
+    "drift": {
+      "amount_psi_same_period": 0.0008,
+      "amount_psi_x1.6_inflation": 0.2706
+    }
+  }
+}
